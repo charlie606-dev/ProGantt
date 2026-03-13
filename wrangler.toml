@@ -1,0 +1,13 @@
+# Cloudflare Pages 專案設定
+# 專案名稱 "ProGantt - Project Scheduler" 請在 Cloudflare Dashboard 建立時使用
+name = "progantt-project-scheduler"
+pages_build_output_dir = "./dist"
+compatibility_date = "2024-12-01"
+
+# GEMINI_API_KEY 請在 Cloudflare Dashboard 的 Workers & Pages > 專案 > Settings > Bindings > Add > Secret 中設定
+# 或使用指令: npx wrangler pages secret put GEMINI_API_KEY --project-name=progantt-project-scheduler
+
+[[d1_databases]]
+binding = "DB"
+database_name = "progantt-project-scheduler-db"
+database_id = "6a266f6a-d0be-46c5-9ce8-b652db8f4d08"
