@@ -472,7 +472,7 @@ export default function App() {
           <div className="w-16 h-16 bg-primary-100 text-primary-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
             <Calendar className="w-8 h-8" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">ProGantt 專案管理</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Timeline Studio 專案管理</h1>
           <p className="text-gray-500 mb-8">請登入以開始管理您的專案與任務，所有資料將安全地儲存於雲端。</p>
           <button
             onClick={handleLogin}
@@ -523,7 +523,7 @@ export default function App() {
             <div className="p-2 bg-primary-600 rounded-lg shadow-md">
               <Calendar className="text-white" size={20} />
             </div>
-            <h1 className="text-xl font-bold text-gray-900 tracking-tight">ProGantt 專案排程</h1>
+            <h1 className="text-xl font-bold text-gray-900 tracking-tight">Timeline Studio 專案排程</h1>
             
             <div className="flex items-center gap-2 ml-4 border-l border-gray-200 pl-4">
               <select

@@ -1,5 +1,5 @@
 {
-  "name": "ProGantt - Project Scheduler",
+  "name": "Timeline Studio - Project Scheduler",
   "description": "A Material Design-inspired project scheduling tool featuring WBS hierarchy, dependency management, and interactive Gantt chart visualization.",
   "requestFramePermissions": []
 }
