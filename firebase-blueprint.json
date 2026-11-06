@@ -1,0 +1,107 @@
+{
+  "entities": {
+    "Project": {
+      "title": "Project",
+      "description": "A project containing tasks",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the project"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the project"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Timestamp of last update"
+        },
+        "userId": {
+          "type": "string",
+          "description": "ID of the user who owns this project"
+        }
+      },
+      "required": ["id", "name", "updatedAt", "userId"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A task in the Gantt chart",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the task"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the task"
+        },
+        "start": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Start date of the task"
+        },
+        "end": {
+          "type": "string",
+          "format": "date-time",
+          "description": "End date of the task"
+        },
+        "progress": {
+          "type": "number",
+          "description": "Progress percentage (0-100)"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of task IDs this task depends on"
+        },
+        "assignee": {
+          "type": "string",
+          "description": "Person assigned to the task"
+        },
+        "color": {
+          "type": "string",
+          "description": "Color code for the task"
+        },
+        "parentId": {
+          "type": "string",
+          "description": "ID of the parent task if any"
+        },
+        "wbs": {
+          "type": "string",
+          "description": "Work Breakdown Structure code"
+        },
+        "isExpanded": {
+          "type": "boolean",
+          "description": "Whether the task is expanded in the UI"
+        },
+        "userId": {
+          "type": "string",
+          "description": "ID of the user who owns this task"
+        },
+        "projectId": {
+          "type": "string",
+          "description": "ID of the project this task belongs to"
+        }
+      },
+      "required": ["id", "name", "start", "end", "progress", "dependencies", "userId", "projectId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/projects/{projectId}": {
+      "schema": {
+        "$ref": "#/entities/Project"
+      },
+      "description": "Projects belonging to a specific user"
+    },
+    "/users/{userId}/projects/{projectId}/tasks/{taskId}": {
+      "schema": {
+        "$ref": "#/entities/Task"
+      },
+      "description": "Tasks belonging to a specific project"
+    }
+  }
+}

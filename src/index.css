@@ -1,1 +1,24 @@
 @import "tailwindcss";
+
+@theme {
+  --color-primary-50: #e6f8f7;
+  --color-primary-100: #c0eeea;
+  --color-primary-200: #9ae4dd;
+  --color-primary-300: #74dad0;
+  --color-primary-400: #4ed0c3;
+  --color-primary-500: #39c5bb;
+  --color-primary-600: #2da199;
+  --color-primary-700: #227d77;
+  --color-primary-800: #175955;
+  --color-primary-900: #0b3533;
+}
+
+@layer utilities {
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

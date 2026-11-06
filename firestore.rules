@@ -1,0 +1,138 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users/{userId}/projects
+    // Document ID: {projectId}
+    // Fields:
+    //   - id: string (required) - Unique identifier for the project
+    //   - name: string (required) - Name of the project
+    //   - updatedAt: number (required) - Timestamp of last update
+    //   - userId: string (required) - ID of the user who owns this project
+    //
+    // Collection: users/{userId}/projects/{projectId}/tasks
+    // Document ID: {taskId}
+    // Fields:
+    //   - id: string (required) - Unique identifier for the task
+    //   - name: string (required) - Name of the task
+    //   - start: timestamp (required) - Start date of the task
+    //   - end: timestamp (required) - End date of the task
+    //   - progress: number (required) - Progress percentage (0-100)
+    //   - dependencies: list (required) - List of task IDs this task depends on
+    //   - assignee: string (optional) - Person assigned to the task
+    //   - color: string (optional) - Color code for the task
+    //   - parentId: string (optional) - ID of the parent task if any
+    //   - wbs: string (optional) - Work Breakdown Structure code
+    //   - isExpanded: boolean (optional) - Whether the task is expanded in the UI
+    //   - userId: string (required) - ID of the user who owns this task
+    //   - projectId: string (required) - ID of the project this task belongs to
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    // Check if the user is authenticated
+    function isAuthenticated() {
+       return request.auth != null;
+    }
+    
+    // Check if user owns the resource (for user-owned documents)
+    function isOwner(userId) {
+       return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Check if user is owner based on document's userId field
+    function isDocOwner() {
+       return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+    
+    // Verify userId hasn't been tampered with on create
+    function uidUnchanged() {
+       return !('userId' in request.resource.data) ||
+         request.resource.data.userId == request.auth.uid;
+    }
+    
+    // Ensure userId field is not modified on update
+    function uidNotModified() {
+       return !('userId' in request.resource.data) ||
+         request.resource.data.userId == resource.data.userId;
+    }
+    
+    // Validate required fields exist
+    function hasRequiredFields(fields) {
+       return request.resource.data.keys().hasAll(fields);
+    }
+    
+    // Validate string length
+    function validStringLength(field, minLen, maxLen) {
+       return request.resource.data[field] is string &&
+         request.resource.data[field].size() >= minLen &&
+         request.resource.data[field].size() <= maxLen;
+    }
+    
+    // Validate optional string (if present, must be string and within length)
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() >= minLen &&
+              request.resource.data[field].size() <= maxLen);
+    }
+    
+    // Validate that a list is a list and enforces size limits
+    function isValidList(listField, maxSize) {
+      return request.resource.data[listField] is list && request.resource.data[listField].size() <= maxSize;
+    }
+
+    // Domain Validators
+    function isValidProject() {
+      return hasRequiredFields(['id', 'name', 'updatedAt', 'userId']) &&
+             validStringLength('id', 1, 100) &&
+             validStringLength('name', 1, 200) &&
+             request.resource.data.updatedAt is number &&
+             request.resource.data.userId == request.auth.uid;
+    }
+
+    function isValidTask() {
+      return hasRequiredFields(['id', 'name', 'start', 'end', 'progress', 'dependencies', 'userId', 'projectId']) &&
+             validStringLength('id', 1, 100) &&
+             validStringLength('name', 1, 200) &&
+             validStringLength('projectId', 1, 100) &&
+             request.resource.data.start is timestamp &&
+             request.resource.data.end is timestamp &&
+             request.resource.data.progress is number &&
+             request.resource.data.progress >= 0 &&
+             request.resource.data.progress <= 100 &&
+             isValidList('dependencies', 100) &&
+             isValidOptionalString('assignee', 0, 100) &&
+             isValidOptionalString('color', 0, 20) &&
+             isValidOptionalString('parentId', 0, 100) &&
+             isValidOptionalString('wbs', 0, 50) &&
+             (!( 'isExpanded' in request.resource.data ) || request.resource.data.isExpanded is bool) &&
+             request.resource.data.userId == request.auth.uid;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId}/projects/{projectId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidProject() && uidUnchanged();
+      allow update: if isOwner(userId) && isValidProject() && uidNotModified();
+      allow delete: if isOwner(userId);
+    }
+
+    match /users/{userId}/projects/{projectId}/tasks/{taskId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidTask() && uidUnchanged();
+      allow update: if isOwner(userId) && isValidTask() && uidNotModified();
+      allow delete: if isOwner(userId);
+    }
+  }
+}

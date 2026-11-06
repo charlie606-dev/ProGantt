@@ -215,3 +215,106 @@ export function updateTaskEndDate(task: Task, newStart: Date, duration: number):
     end: addDays(newStart, duration),
   };
 }
+
+/**
+ * Calculates the critical path of the project.
+ * Returns a Set of task IDs that are on the critical path.
+ */
+export function calculateCriticalPath(tasks: Task[]): Set<string> {
+  const criticalPathIds = new Set<string>();
+  if (tasks.length === 0) return criticalPathIds;
+
+  // 1. Identify leaf tasks (tasks without children)
+  const parentIds = new Set(tasks.filter(t => t.parentId).map(t => t.parentId));
+  const leafTasks = tasks.filter(t => !parentIds.has(t.id));
+  
+  if (leafTasks.length === 0) return criticalPathIds;
+
+  // 2. Build successors map
+  const successors = new Map<string, { id: string, type: string }[]>();
+  leafTasks.forEach(t => successors.set(t.id, []));
+  
+  leafTasks.forEach(t => {
+    t.dependencies.forEach(dep => {
+      if (successors.has(dep.predecessorId)) {
+        successors.get(dep.predecessorId)!.push({ id: t.id, type: dep.type || 'FS' });
+      }
+    });
+  });
+
+  // 3. Initialize LF (Late Finish) and LS (Late Start)
+  const maxEF = new Date(Math.max(...leafTasks.map(t => t.end.getTime())));
+  const LF = new Map<string, Date>();
+  const LS = new Map<string, Date>();
+  
+  leafTasks.forEach(t => {
+    LF.set(t.id, maxEF);
+    LS.set(t.id, addDays(maxEF, -t.duration));
+  });
+
+  // 4. Backward Pass (Iterative relaxation)
+  let changed = true;
+  let iterations = 0;
+  const MAX_ITERATIONS = leafTasks.length * 2;
+
+  while (changed && iterations < MAX_ITERATIONS) {
+    changed = false;
+    iterations++;
+
+    for (const task of leafTasks) {
+      const currentLF = LF.get(task.id)!;
+      let newLF = currentLF;
+
+      const succs = successors.get(task.id) || [];
+      for (const succ of succs) {
+        const succLS = LS.get(succ.id)!;
+        const succLF = LF.get(succ.id)!;
+        
+        let reqLF = newLF;
+
+        switch (succ.type) {
+          case 'FS': reqLF = succLS; break;
+          case 'FF': reqLF = succLF; break;
+          case 'SS': reqLF = addDays(succLS, task.duration); break;
+          case 'SF': reqLF = addDays(succLF, task.duration); break;
+          default: reqLF = succLS; break;
+        }
+
+        if (isBefore(reqLF, newLF)) {
+          newLF = reqLF;
+        }
+      }
+
+      if (newLF.getTime() !== currentLF.getTime()) {
+        LF.set(task.id, newLF);
+        LS.set(task.id, addDays(newLF, -task.duration));
+        changed = true;
+      }
+    }
+  }
+
+  // 5. Calculate Slack and identify critical leaf tasks
+  leafTasks.forEach(task => {
+    const ls = LS.get(task.id)!;
+    const slack = differenceInDays(ls, task.start);
+    
+    // If slack is 0 (or less, due to constraints), it's on the critical path
+    if (slack <= 0) {
+      criticalPathIds.add(task.id);
+    }
+  });
+
+  // 6. Add parent tasks if they contain critical children
+  let parentAdded = true;
+  while (parentAdded) {
+    parentAdded = false;
+    for (const task of tasks) {
+      if (task.parentId && criticalPathIds.has(task.id) && !criticalPathIds.has(task.parentId)) {
+        criticalPathIds.add(task.parentId);
+        parentAdded = true;
+      }
+    }
+  }
+
+  return criticalPathIds;
+}

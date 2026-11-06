@@ -13,6 +13,9 @@ interface GanttChartProps {
   onTaskClick: (task: Task) => void;
   onTaskUpdate: (task: Task) => void;
   viewMode?: TimelineViewMode;
+  onViewModeChange?: (mode: TimelineViewMode) => void;
+  showCriticalPath?: boolean;
+  criticalPathIds?: Set<string>;
 }
 
 interface DragState {
@@ -27,11 +30,21 @@ interface DragState {
   currentDuration: number;
 }
 
-export const GanttChart: React.FC<GanttChartProps> = ({ tasks, onTaskClick, onTaskUpdate, viewMode = 'day' }) => {
+export const GanttChart: React.FC<GanttChartProps> = ({ tasks, onTaskClick, onTaskUpdate, viewMode = 'day', onViewModeChange, showCriticalPath = false, criticalPathIds = new Set() }) => {
   const { days, projectStart, projectEnd } = useMemo(() => {
     if (tasks.length === 0) {
       const today = startOfDay(new Date());
-      return { days: [today], projectStart: today, projectEnd: today };
+      let bufferStart = 14;
+      let bufferEnd = 14;
+      if (viewMode === 'week') { bufferStart = 28; bufferEnd = 28; }
+      if (viewMode === 'month') { bufferStart = 60; bufferEnd = 60; }
+      if (viewMode === 'quarter') { bufferStart = 180; bufferEnd = 180; }
+      if (viewMode === 'year') { bufferStart = 365; bufferEnd = 365; }
+      
+      const projectStart = addDays(today, -bufferStart);
+      const projectEnd = addDays(today, bufferEnd);
+      const days = eachDayOfInterval({ start: projectStart, end: projectEnd });
+      return { days, projectStart, projectEnd };
     }
 
     const startDates = tasks.map((t) => t.start);
@@ -344,11 +357,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({ tasks, onTaskClick, onTa
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
-      <div className="p-4 border-b border-gray-100 bg-gray-50/50">
-        <h2 className="text-lg font-semibold text-gray-800">甘特圖</h2>
-      </div>
-      
+    <div className="bg-white overflow-hidden flex flex-col h-full">
       <div className="overflow-auto flex-1 relative min-h-0" ref={chartRef}>
         {/* Header */}
         <div className="flex flex-col sticky top-0 z-30 bg-white border-b border-gray-200" style={{ height: headerHeight, width: chartWidth, minWidth: '100%' }}>
@@ -373,7 +382,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({ tasks, onTaskClick, onTa
                 key={item.key}
                 className={`flex-shrink-0 flex flex-col items-center justify-center border-r border-gray-100 text-[10px] text-gray-500 ${
                   item.isToday 
-                    ? 'bg-blue-50 text-blue-600 font-bold' 
+                    ? 'bg-primary-50 text-primary-600 font-bold' 
                     : item.isWeekend 
                       ? 'bg-gray-100/80 text-gray-600' 
                       : ''
@@ -395,7 +404,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({ tasks, onTaskClick, onTa
                 key={`grid-${item.key}`}
                 className={`flex-shrink-0 border-r border-gray-50 h-full ${
                   item.isToday 
-                    ? 'bg-blue-50/30' 
+                    ? 'bg-primary-50/30' 
                     : item.isWeekend 
                       ? 'bg-gray-50/80' 
                       : ''
@@ -443,12 +452,12 @@ export const GanttChart: React.FC<GanttChartProps> = ({ tasks, onTaskClick, onTa
                     className={`absolute h-8 ${
                       isParent 
                         ? 'flex items-start overflow-visible cursor-pointer'
-                        : `rounded-md shadow-sm border border-white/20 flex items-center px-2 overflow-visible hover:shadow-md transition-shadow ${isDragging ? 'z-30 ring-2 ring-indigo-300 cursor-grabbing' : 'cursor-pointer'}`
+                        : `rounded-md shadow-sm border flex items-center px-2 overflow-visible hover:shadow-md transition-shadow ${isDragging ? 'z-30 ring-2 ring-primary-300 cursor-grabbing' : 'cursor-pointer'} ${showCriticalPath && criticalPathIds.has(task.id) ? 'border-red-500 ring-2 ring-red-500 ring-offset-1' : 'border-white/20'}`
                     }`}
                     style={{
                       left: startOffset,
                       width: visualWidth,
-                      backgroundColor: isParent ? 'transparent' : (task.color || '#6366f1'),
+                      backgroundColor: isParent ? 'transparent' : (showCriticalPath && criticalPathIds.has(task.id) ? '#ef4444' : (task.color || '#6366f1')),
                     }}
                     onMouseDown={(e) => {
                       if (!isParent) handleMouseDown(e, task, 'move');
@@ -492,7 +501,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({ tasks, onTaskClick, onTa
 
                         {/* Dependency Create Handle */}
                         <div
-                          className="absolute -right-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-indigo-500 border-2 border-white opacity-0 group-hover:opacity-100 cursor-crosshair z-20"
+                          className="absolute -right-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-primary-500 border-2 border-white opacity-0 group-hover:opacity-100 cursor-crosshair z-20"
                           onMouseDown={(e) => handleDependencyMouseDown(e, task)}
                         />
                       </>
@@ -543,15 +552,17 @@ export const GanttChart: React.FC<GanttChartProps> = ({ tasks, onTaskClick, onTa
                     path = `M ${x1} ${y1} L ${x1 + 10} ${y1} L ${x1 + 10} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;
                   }
 
+                  const isCriticalDep = showCriticalPath && criticalPathIds.has(task.id) && criticalPathIds.has(dep.predecessorId);
+
                   return (
                     <path
                       key={`${task.id}-${dep.predecessorId}`}
                       d={path}
                       fill="none"
-                      stroke="#6b7280"
-                      strokeWidth="2"
+                      stroke={isCriticalDep ? '#ef4444' : '#6b7280'}
+                      strokeWidth={isCriticalDep ? "3" : "2"}
                       strokeDasharray={dep.linkType === 'weak' ? '4 4' : 'none'}
-                      markerEnd="url(#arrowhead)"
+                      markerEnd={isCriticalDep ? "url(#arrowhead-critical)" : "url(#arrowhead)"}
                     />
                   );
                 })
@@ -574,6 +585,9 @@ export const GanttChart: React.FC<GanttChartProps> = ({ tasks, onTaskClick, onTa
                 </marker>
                 <marker id="arrowhead-drag" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
                   <polygon points="0 0, 6 2, 0 4" fill="#6366f1" />
+                </marker>
+                <marker id="arrowhead-critical" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
+                  <polygon points="0 0, 6 2, 0 4" fill="#ef4444" />
                 </marker>
               </defs>
             </svg>

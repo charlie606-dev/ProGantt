@@ -1,29 +1,23 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Task } from '../types';
 import { format } from 'date-fns';
 import { Edit2, Trash2, Plus } from 'lucide-react';
+
+const PRESET_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#6b7280'];
 
 interface TaskTableProps {
   tasks: Task[];
   onEdit: (task: Task) => void;
   onDelete: (taskId: string) => void;
   onAdd: () => void;
+  onTaskUpdate?: (task: Task) => void;
 }
 
-export const TaskTable: React.FC<TaskTableProps> = ({ tasks, onEdit, onDelete, onAdd }) => {
+export const TaskTable: React.FC<TaskTableProps> = ({ tasks, onEdit, onDelete, onAdd, onTaskUpdate }) => {
+  const [activeColorPicker, setActiveColorPicker] = useState<string | null>(null);
+
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
-      <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-        <h2 className="text-lg font-semibold text-gray-800">任務列表</h2>
-        <button
-          onClick={onAdd}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm text-sm font-medium"
-        >
-          <Plus size={16} />
-          新增任務
-        </button>
-      </div>
-      
+    <div className="bg-white overflow-hidden flex flex-col h-full">
       <div className="overflow-auto flex-1 min-h-0">
         <table className="w-full text-left border-collapse">
           <thead className="bg-gray-50 sticky top-0 z-10">
@@ -52,7 +46,40 @@ export const TaskTable: React.FC<TaskTableProps> = ({ tasks, onEdit, onDelete, o
                   <td className="p-4 text-sm font-mono text-gray-600">{task.wbs}</td>
                   <td className="p-4 text-sm font-medium text-gray-900">
                     <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: isParent ? '#374151' : (task.color || '#6366f1') }} />
+                      <div className={`relative flex-shrink-0 ${activeColorPicker === task.id ? 'z-20' : ''}`}>
+                        <button
+                          type="button"
+                          className={`w-3 h-3 rounded-full ${!isParent ? 'cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-gray-300' : ''}`}
+                          style={{ backgroundColor: isParent ? '#374151' : (task.color || '#6366f1') }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isParent && onTaskUpdate) {
+                              setActiveColorPicker(activeColorPicker === task.id ? null : task.id);
+                            }
+                          }}
+                          title={!isParent ? "變更顏色" : undefined}
+                        />
+                        {activeColorPicker === task.id && onTaskUpdate && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setActiveColorPicker(null); }} />
+                            <div className="absolute left-0 top-5 z-50 bg-white border border-gray-200 shadow-lg rounded-lg p-2 grid grid-cols-4 gap-2 w-max" onClick={e => e.stopPropagation()}>
+                              {PRESET_COLORS.map(c => (
+                                <button
+                                  key={c}
+                                  type="button"
+                                  className="w-5 h-5 rounded-full hover:scale-110 transition-transform border border-gray-200"
+                                  style={{ backgroundColor: c }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onTaskUpdate({ ...task, color: c });
+                                    setActiveColorPicker(null);
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
                       {task.name}
                     </div>
                   </td>
@@ -72,7 +99,7 @@ export const TaskTable: React.FC<TaskTableProps> = ({ tasks, onEdit, onDelete, o
                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => onEdit(task)}
-                        className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                        className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
                         title="Edit"
                       >
                         <Edit2 size={14} />

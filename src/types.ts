@@ -15,6 +15,7 @@ export interface Task {
   parentId?: string; // ID of the parent task
   progress: number; // 0-100
   color?: string;
+  order?: number; // Sorting order
 }
 
 export type DependencyType = 'FS' | 'SS' | 'FF' | 'SF';
@@ -24,5 +25,9 @@ export type TimelineViewMode = 'day' | 'week' | 'month' | 'quarter' | 'year';
 export interface Project {
   id: string;
   name: string;
-  tasks: Task[];
+  description?: string;
+  manager?: string;
+  teamMembers?: string;
+  expectedEndDate?: number;
+  updatedAt: number;
 }

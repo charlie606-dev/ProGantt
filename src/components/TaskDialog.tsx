@@ -143,7 +143,7 @@ export const TaskDialog: React.FC<TaskDialogProps> = ({ isOpen, onClose, onSave,
                 <select
                   value={parentId || ''}
                   onChange={(e) => setParentId(e.target.value || undefined)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-all"
                 >
                   <option value="">無 (獨立任務)</option>
                   {existingTasks
@@ -164,7 +164,7 @@ export const TaskDialog: React.FC<TaskDialogProps> = ({ isOpen, onClose, onSave,
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="輸入任務名稱"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-all"
                 />
               </div>
 
@@ -177,7 +177,7 @@ export const TaskDialog: React.FC<TaskDialogProps> = ({ isOpen, onClose, onSave,
                     value={start}
                     onChange={handleStartChange}
                     disabled={isParent}
-                    className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all ${isParent ? 'bg-gray-100 cursor-not-allowed text-gray-500' : ''}`}
+                    className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-all ${isParent ? 'bg-gray-100 cursor-not-allowed text-gray-500' : ''}`}
                   />
                 </div>
 
@@ -190,7 +190,7 @@ export const TaskDialog: React.FC<TaskDialogProps> = ({ isOpen, onClose, onSave,
                     onChange={handleEndChange}
                     disabled={isParent}
                     min={start ? format(addDays(parseISO(start), 1), 'yyyy-MM-dd') : undefined}
-                    className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all ${isParent ? 'bg-gray-100 cursor-not-allowed text-gray-500' : ''}`}
+                    className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-all ${isParent ? 'bg-gray-100 cursor-not-allowed text-gray-500' : ''}`}
                   />
                 </div>
 
@@ -203,12 +203,12 @@ export const TaskDialog: React.FC<TaskDialogProps> = ({ isOpen, onClose, onSave,
                     value={duration}
                     onChange={handleDurationChange}
                     disabled={isParent}
-                    className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all ${isParent ? 'bg-gray-100 cursor-not-allowed text-gray-500' : ''}`}
+                    className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-all ${isParent ? 'bg-gray-100 cursor-not-allowed text-gray-500' : ''}`}
                   />
                 </div>
               </div>
               {isParent && (
-                <p className="text-xs text-indigo-600 mt-1">此為上層任務，開始日期、結束日期與天數由其子任務自動計算。</p>
+                <p className="text-xs text-primary-600 mt-1">此為上層任務，開始日期、結束日期與天數由其子任務自動計算。</p>
               )}
 
               {/* Color */}
@@ -246,18 +246,18 @@ export const TaskDialog: React.FC<TaskDialogProps> = ({ isOpen, onClose, onSave,
                             key={t.id}
                             className={`flex items-center gap-2 p-2 rounded-md transition-colors ${
                               isSelected
-                                ? 'bg-indigo-50 border border-indigo-100'
+                                ? 'bg-primary-50 border border-primary-100'
                                 : 'hover:bg-gray-100'
                             }`}
                           >
                             <div
                               onClick={() => toggleDependency(t.id)}
                               className={`flex-1 flex items-center justify-between cursor-pointer text-sm ${
-                                isSelected ? 'text-indigo-700 font-medium' : 'text-gray-600'
+                                isSelected ? 'text-primary-700 font-medium' : 'text-gray-600'
                               }`}
                             >
                               <span className="truncate">{t.wbs} - {t.name}</span>
-                              {isSelected && <Check size={14} className="text-indigo-600" />}
+                              {isSelected && <Check size={14} className="text-primary-600" />}
                             </div>
                             
                             {isSelected && (
@@ -265,7 +265,7 @@ export const TaskDialog: React.FC<TaskDialogProps> = ({ isOpen, onClose, onSave,
                                 <select
                                   value={dependency.type}
                                   onChange={(e) => updateDependencyType(t.id, e.target.value as DependencyType)}
-                                  className="text-xs border border-gray-300 rounded px-1 py-0.5 outline-none focus:border-indigo-500 bg-white text-gray-700"
+                                  className="text-xs border border-gray-300 rounded px-1 py-0.5 outline-none focus:border-primary-500 bg-white text-gray-700"
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   <option value="FS">FS (完成-開始)</option>
@@ -276,7 +276,7 @@ export const TaskDialog: React.FC<TaskDialogProps> = ({ isOpen, onClose, onSave,
                                 <select
                                   value={dependency.linkType || 'weak'}
                                   onChange={(e) => updateDependencyLinkType(t.id, e.target.value as 'strong' | 'weak')}
-                                  className={`text-xs border rounded px-1 py-0.5 outline-none focus:border-indigo-500 bg-white ${
+                                  className={`text-xs border rounded px-1 py-0.5 outline-none focus:border-primary-500 bg-white ${
                                     dependency.linkType === 'strong' ? 'text-red-600 border-red-200 bg-red-50' : 'text-gray-600 border-gray-300'
                                   }`}
                                   onClick={(e) => e.stopPropagation()}
@@ -305,7 +305,7 @@ export const TaskDialog: React.FC<TaskDialogProps> = ({ isOpen, onClose, onSave,
               <button
                 onClick={handleSave}
                 disabled={!name || !start || duration < 1}
-                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 儲存任務
               </button>

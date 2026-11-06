@@ -1,5 +1,9 @@
-import { Task } from '../types';
-import { startOfDay, addDays, parseISO, formatISO } from 'date-fns';
+import { Task, Project } from '../types';
+import { startOfDay, addDays, parseISO } from 'date-fns';
+import { v4 as uuidv4 } from 'uuid';
+
+const PROJECTS_STORAGE_KEY = 'progantt_projects';
+const COLUMN_WIDTHS_STORAGE_KEY = 'progantt_column_widths';
 
 export interface ColumnWidths {
   wbs: number;
@@ -68,90 +72,109 @@ const INITIAL_COLUMN_WIDTHS: ColumnWidths = {
   action: 80,
 };
 
-function serializeTasks(tasks: Task[]): any[] {
-  return tasks.map((task) => ({
-    ...task,
-    start: formatISO(task.start, { representation: 'date' }),
-    end: formatISO(task.end, { representation: 'date' }),
-  }));
-}
-
-function deserializeTasks(data: any[]): Task[] {
-  return data.map((task: any) => ({
-    ...task,
-    start: parseISO(task.start),
-    end: parseISO(task.end),
-    dependencies: Array.isArray(task.dependencies)
-      ? task.dependencies.map((d: any) =>
-          typeof d === 'string' ? { predecessorId: d, type: 'FS' as const } : d
-        )
-      : [],
-  }));
-}
+const getTasksKey = (projectId: string) => `progantt_tasks_${projectId}`;
 
 export const StorageManager = {
-  saveTasks: async (tasks: Task[]): Promise<void> => {
+  getProjects: (): Project[] => {
     try {
-      await fetch('/api/db/tasks', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(serializeTasks(tasks)),
-      });
+      const data = localStorage.getItem(PROJECTS_STORAGE_KEY);
+      if (!data) return [];
+      return JSON.parse(data);
     } catch (error) {
-      console.error('Failed to save tasks to D1:', error);
+      console.error('Failed to load projects from localStorage:', error);
+      return [];
     }
   },
 
-  loadTasks: async (): Promise<Task[]> => {
+  saveProjects: (projects: Project[]) => {
     try {
-      const res = await fetch('/api/db/tasks');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      if (!Array.isArray(data) || data.length === 0) return INITIAL_TASKS;
-      return deserializeTasks(data);
+      localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
     } catch (error) {
-      console.error('Failed to load tasks from D1:', error);
+      console.error('Failed to save projects to localStorage:', error);
+    }
+  },
+
+  createProject: (name: string): Project => {
+    const projects = StorageManager.getProjects();
+    const newProject: Project = {
+      id: uuidv4(),
+      name,
+      updatedAt: Date.now()
+    };
+    projects.push(newProject);
+    StorageManager.saveProjects(projects);
+    
+    // Initialize with default tasks
+    StorageManager.saveTasks(newProject.id, INITIAL_TASKS);
+    
+    return newProject;
+  },
+
+  deleteProject: (id: string) => {
+    const projects = StorageManager.getProjects().filter(p => p.id !== id);
+    StorageManager.saveProjects(projects);
+    localStorage.removeItem(getTasksKey(id));
+  },
+
+  saveTasks: (projectId: string, tasks: Task[]) => {
+    try {
+      localStorage.setItem(getTasksKey(projectId), JSON.stringify(tasks));
+      
+      // Update project updatedAt
+      const projects = StorageManager.getProjects();
+      const project = projects.find(p => p.id === projectId);
+      if (project) {
+        project.updatedAt = Date.now();
+        StorageManager.saveProjects(projects);
+      }
+    } catch (error) {
+      console.error('Failed to save tasks to localStorage:', error);
+    }
+  },
+
+  loadTasks: (projectId: string): Task[] => {
+    try {
+      const stored = localStorage.getItem(getTasksKey(projectId));
+      if (!stored) return INITIAL_TASKS;
+
+      const parsed = JSON.parse(stored);
+      return parsed.map((task: any) => ({
+        ...task,
+        start: parseISO(task.start),
+        end: parseISO(task.end),
+        dependencies: Array.isArray(task.dependencies) 
+          ? task.dependencies.map((d: any) => 
+              typeof d === 'string' ? { predecessorId: d, type: 'FS' } : d
+            )
+          : [],
+      }));
+    } catch (error) {
+      console.error('Failed to load tasks from localStorage:', error);
       return INITIAL_TASKS;
     }
   },
 
-  saveColumnWidths: async (widths: ColumnWidths): Promise<void> => {
+  saveColumnWidths: (widths: ColumnWidths) => {
     try {
-      await fetch('/api/db/column-widths', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(widths),
-      });
+      localStorage.setItem(COLUMN_WIDTHS_STORAGE_KEY, JSON.stringify(widths));
     } catch (error) {
-      console.error('Failed to save column widths to D1:', error);
+      console.error('Failed to save column widths to localStorage:', error);
     }
   },
 
-  loadColumnWidths: async (): Promise<ColumnWidths> => {
+  loadColumnWidths: (): ColumnWidths => {
     try {
-      const res = await fetch('/api/db/column-widths');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
+      const stored = localStorage.getItem(COLUMN_WIDTHS_STORAGE_KEY);
+      if (!stored) return INITIAL_COLUMN_WIDTHS;
+      return JSON.parse(stored);
     } catch (error) {
-      console.error('Failed to load column widths from D1:', error);
+      console.error('Failed to load column widths from localStorage:', error);
       return INITIAL_COLUMN_WIDTHS;
     }
   },
-
-  clear: async (): Promise<void> => {
-    try {
-      await fetch('/api/db/tasks', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify([]),
-      });
-      await fetch('/api/db/column-widths', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(INITIAL_COLUMN_WIDTHS),
-      });
-    } catch (error) {
-      console.error('Failed to clear D1 data:', error);
-    }
-  },
+  
+  clear: () => {
+      localStorage.removeItem(PROJECTS_STORAGE_KEY);
+      localStorage.removeItem(COLUMN_WIDTHS_STORAGE_KEY);
+  }
 };

@@ -9,6 +9,8 @@ import {
 import { motion } from 'motion/react';
 import { Edit2, Trash2, Plus, GripVertical } from 'lucide-react';
 
+const PRESET_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#6b7280'];
+
 interface IntegratedGanttProps {
   tasks: Task[];
   onEdit: (task: Task) => void;
@@ -33,13 +35,28 @@ interface IntegratedGanttProps {
     action: number;
   }) => void;
   viewMode?: TimelineViewMode;
+  onViewModeChange?: (mode: TimelineViewMode) => void;
+  showCriticalPath?: boolean;
+  criticalPathIds?: Set<string>;
 }
 
-export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit, onDelete, onTaskUpdate, onQuickAdd, onReorder, columnWidths, onColumnWidthChange, viewMode = 'day' }) => {
+export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit, onDelete, onTaskUpdate, onQuickAdd, onReorder, columnWidths, onColumnWidthChange, viewMode = 'day', onViewModeChange, showCriticalPath = false, criticalPathIds = new Set() }) => {
+  const [activeColorPicker, setActiveColorPicker] = useState<string | null>(null);
+
   const { days, projectStart, projectEnd } = useMemo(() => {
     if (tasks.length === 0) {
       const today = startOfDay(new Date());
-      return { days: [today], projectStart: today, projectEnd: today };
+      let bufferStart = 14;
+      let bufferEnd = 14;
+      if (viewMode === 'week') { bufferStart = 28; bufferEnd = 28; }
+      if (viewMode === 'month') { bufferStart = 60; bufferEnd = 60; }
+      if (viewMode === 'quarter') { bufferStart = 180; bufferEnd = 180; }
+      if (viewMode === 'year') { bufferStart = 365; bufferEnd = 365; }
+      
+      const projectStart = addDays(today, -bufferStart);
+      const projectEnd = addDays(today, bufferEnd);
+      const days = eachDayOfInterval({ start: projectStart, end: projectEnd });
+      return { days, projectStart, projectEnd };
     }
 
     const startDates = tasks.map((t) => t.start);
@@ -453,7 +470,69 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
     document.body.style.userSelect = 'none';
   };
 
+  const autoFitColumn = (e: React.MouseEvent, column: keyof typeof columnWidths) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    let maxWidth = 40; // Minimum width
+    
+    const getTextWidthDOM = (text: string, className: string) => {
+      const span = document.createElement('span');
+      span.className = className;
+      span.style.position = 'absolute';
+      span.style.visibility = 'hidden';
+      span.style.whiteSpace = 'pre';
+      span.textContent = text;
+      document.body.appendChild(span);
+      const width = span.getBoundingClientRect().width;
+      document.body.removeChild(span);
+      return width;
+    };
+
+    // Calculate header width
+    const headerText = column === 'wbs' ? 'WBS' :
+                       column === 'name' ? '任務名稱' :
+                       column === 'start' ? '開始日' :
+                       column === 'end' ? '完成日' :
+                       column === 'duration' ? '天數' :
+                       column === 'action' ? '操作' : '';
+    
+    // Base width for header + padding + resizer
+    maxWidth = Math.max(maxWidth, getTextWidthDOM(headerText, 'text-xs font-semibold uppercase tracking-wider') + 40);
+
+    // Calculate content width
+    tasks.forEach(task => {
+      let contentWidth = 0;
+      if (column === 'wbs') {
+        contentWidth = getTextWidthDOM(task.wbs, 'text-sm font-mono') + 32; // padding
+      } else if (column === 'name') {
+        contentWidth = getTextWidthDOM(task.name, 'text-sm') + 60; // Text + dot(16) + padding(32) + extra buffer(12)
+      } else if (column === 'start' || column === 'end') {
+        contentWidth = 120; // Fixed date format width
+      } else if (column === 'duration') {
+        contentWidth = getTextWidthDOM(task.duration.toString(), 'text-sm') + 40;
+      } else if (column === 'action') {
+        contentWidth = 100; // Fixed action buttons width
+      }
+      
+      if (contentWidth > maxWidth) {
+        maxWidth = contentWidth;
+      }
+    });
+
+    onColumnWidthChange({
+      ...columnWidths,
+      [column]: Math.ceil(maxWidth),
+    });
+  };
+
   const handleLeftScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    // Prevent horizontal scrolling completely on this container
+    // This stops layout shifts caused by absolute inputs receiving focus
+    if (e.currentTarget.scrollLeft > 0) {
+      e.currentTarget.scrollLeft = 0;
+    }
+
     if (isSyncingLeft.current) return;
     isSyncingRight.current = true;
     if (rightBodyRef.current) {
@@ -593,8 +672,9 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
 
   const Resizer = ({ column }: { column: keyof typeof columnWidths }) => (
     <div
-      className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-indigo-400 z-50 transition-colors"
+      className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary-400 z-50 transition-colors"
       onMouseDown={(e) => startResize(e, column)}
+      onDoubleClick={(e) => autoFitColumn(e, column)}
     />
   );
 
@@ -610,29 +690,73 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
 
     return (
       <div 
-        className="flex items-center px-4 text-sm border-r border-gray-100 truncate cursor-pointer hover:bg-gray-100" 
-        style={{ width }}
+        className={`relative flex items-center px-4 text-sm border-r border-gray-100 cursor-pointer hover:bg-gray-100 ${(isEditing || (field === 'name' && activeColorPicker === task.id)) ? 'overflow-visible z-30' : 'overflow-hidden whitespace-nowrap'}`} 
+        style={{ width, minWidth: width, maxWidth: width }}
         onClick={() => handleCellClick(task, field, displayValue)}
       >
         {isEditing ? (
           <input
-            autoFocus
+            ref={(el) => {
+              if (el) {
+                // Focus without scrolling the container to prevent layout shifts
+                el.focus({ preventScroll: true });
+              }
+            }}
             type={type}
             value={tempValue}
             onChange={(e) => setTempValue(e.target.value)}
             onBlur={handleCellBlur}
             onKeyDown={handleKeyDown}
-            className="w-full h-full bg-white border border-indigo-500 rounded px-1 outline-none"
+            className="absolute left-0 top-1/2 -translate-y-1/2 z-20 h-[calc(100%-8px)] bg-white border-2 border-primary-500 rounded px-2 outline-none shadow-md"
+            style={{ 
+              width: type === 'date' ? '140px' : type === 'number' ? '80px' : '100%',
+              minWidth: type === 'date' ? '140px' : type === 'number' ? '80px' : '100%',
+            }}
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
           field === 'name' ? (
-             <div className="flex items-center w-full">
-                <div className="w-2 h-2 rounded-full mr-2 flex-shrink-0" style={{ backgroundColor: isParent ? '#374151' : (task.color || '#6366f1') }} />
+             <div className="flex items-center w-full min-w-0">
+                <div className="relative flex-shrink-0 mr-2">
+                  <button
+                    type="button"
+                    className={`w-2 h-2 rounded-full ${!isParent ? 'cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-gray-300' : ''}`}
+                    style={{ backgroundColor: isParent ? '#374151' : (task.color || '#6366f1') }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!isParent) {
+                        setActiveColorPicker(activeColorPicker === task.id ? null : task.id);
+                      }
+                    }}
+                    title={!isParent ? "變更顏色" : undefined}
+                  />
+                  {activeColorPicker === task.id && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setActiveColorPicker(null); }} />
+                      <div className="absolute left-0 top-4 z-50 bg-white border border-gray-200 shadow-lg rounded-lg p-2 grid grid-cols-4 gap-2 w-max" onClick={e => e.stopPropagation()}>
+                        {PRESET_COLORS.map(c => (
+                          <button
+                            key={c}
+                            type="button"
+                            className="w-5 h-5 rounded-full hover:scale-110 transition-transform border border-gray-200"
+                            style={{ backgroundColor: c }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onTaskUpdate({ ...task, color: c });
+                              setActiveColorPicker(null);
+                            }}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
                 <span className="truncate">{task.name}</span>
              </div>
           ) : (
-            field === 'start' || field === 'end' ? format(task[field] as Date, 'MM/dd') : task[field as keyof Task]
+            <span className="truncate w-full">
+              {field === 'start' || field === 'end' ? format(task[field] as Date, 'MM/dd') : task[field as keyof Task]}
+            </span>
           )
         )}
       </div>
@@ -640,39 +764,35 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
-      <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
-        <h2 className="text-lg font-semibold text-gray-800">整合甘特圖</h2>
-      </div>
-      
+    <div className="bg-white overflow-hidden flex flex-col h-full">
       <div className="flex flex-1 overflow-hidden min-h-0">
         {/* Left Panel: Task List */}
-        <div className="flex flex-col border-r border-gray-200 flex-shrink-0" style={{ width: totalLeftWidth }}>
+        <div className="flex flex-col border-r border-gray-200 flex-shrink-0" style={{ width: 'max-content', minWidth: totalLeftWidth }}>
           {/* Left Header */}
           <div className="flex bg-gray-50 border-b border-gray-200 h-16 flex-shrink-0">
-            <div className="flex items-center justify-center border-r border-gray-200 bg-gray-50" style={{ width: 30 }}>
+            <div className="flex items-center justify-center border-r border-gray-200 bg-gray-50" style={{ width: 30, minWidth: 30, maxWidth: 30 }}>
             </div>
-            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200" style={{ width: columnWidths.wbs }}>
+            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200" style={{ width: columnWidths.wbs, minWidth: columnWidths.wbs, maxWidth: columnWidths.wbs }}>
               WBS
               <Resizer column="wbs" />
             </div>
-            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200" style={{ width: columnWidths.name }}>
+            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200" style={{ width: columnWidths.name, minWidth: columnWidths.name, maxWidth: columnWidths.name }}>
               任務名稱
               <Resizer column="name" />
             </div>
-            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200" style={{ width: columnWidths.start }}>
+            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200" style={{ width: columnWidths.start, minWidth: columnWidths.start, maxWidth: columnWidths.start }}>
               開始日
               <Resizer column="start" />
             </div>
-            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200" style={{ width: columnWidths.end }}>
+            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200" style={{ width: columnWidths.end, minWidth: columnWidths.end, maxWidth: columnWidths.end }}>
               完成日
               <Resizer column="end" />
             </div>
-            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200" style={{ width: columnWidths.duration }}>
+            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200" style={{ width: columnWidths.duration, minWidth: columnWidths.duration, maxWidth: columnWidths.duration }}>
               天數
               <Resizer column="duration" />
             </div>
-            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200" style={{ width: columnWidths.action }}>
+            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200" style={{ width: columnWidths.action, minWidth: columnWidths.action, maxWidth: columnWidths.action }}>
               操作
               <Resizer column="action" />
             </div>
@@ -684,37 +804,39 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
             onScroll={handleLeftScroll}
             className="flex-1 overflow-y-auto overflow-x-hidden min-h-0"
           >
-            {tasks.map((task) => (
+            {tasks.map((task) => {
+              const isRowEditing = editingCell?.taskId === task.id;
+              return (
               <div 
                 key={task.id} 
-                className={`flex border-b border-gray-100 hover:bg-gray-50 transition-colors h-12 bg-white ${
-                  dragOverTaskId === task.id ? 'border-t-2 border-t-indigo-500' : ''
-                }`}
+                className={`flex border-b border-gray-100 hover:bg-gray-50 transition-colors h-12 bg-white w-max ${
+                  dragOverTaskId === task.id ? 'border-t-2 border-t-primary-500' : ''
+                } ${(isRowEditing || activeColorPicker === task.id) ? 'relative z-20' : 'relative z-0'}`}
                 draggable
                 onDragStart={(e) => handleDragStart(e, task)}
                 onDragOver={(e) => handleDragOver(e, task)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, task)}
               >
-                <div className="flex items-center justify-center border-r border-gray-100 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600" style={{ width: 30 }}>
+                <div className="flex items-center justify-center border-r border-gray-100 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600" style={{ width: 30, minWidth: 30, maxWidth: 30 }}>
                   <GripVertical size={14} />
                 </div>
-                <div className="flex items-center px-4 text-sm font-mono text-gray-600 border-r border-gray-100 truncate" style={{ width: columnWidths.wbs }}>{task.wbs}</div>
+                <div className="flex items-center px-4 text-sm font-mono text-gray-600 border-r border-gray-100 truncate" style={{ width: columnWidths.wbs, minWidth: columnWidths.wbs, maxWidth: columnWidths.wbs }}>{task.wbs}</div>
                 
                 {renderCell(task, 'name', columnWidths.name, 'text')}
                 {renderCell(task, 'start', columnWidths.start, 'date')}
                 {renderCell(task, 'end', columnWidths.end, 'date')}
                 {renderCell(task, 'duration', columnWidths.duration, 'number')}
 
-                <div className="flex items-center justify-center px-4 border-r border-gray-100" style={{ width: columnWidths.action }}>
+                <div className="flex items-center justify-center px-4 border-r border-gray-100" style={{ width: columnWidths.action, minWidth: columnWidths.action, maxWidth: columnWidths.action }}>
                    <div className="flex gap-1">
                       <button onClick={() => onQuickAdd(task)} className="p-1 text-gray-500 hover:text-green-600 rounded" title="新增後續任務"><Plus size={14} /></button>
-                      <button onClick={() => onEdit(task)} className="p-1 text-gray-500 hover:text-indigo-600 rounded"><Edit2 size={14} /></button>
+                      <button onClick={() => onEdit(task)} className="p-1 text-gray-500 hover:text-primary-600 rounded"><Edit2 size={14} /></button>
                       <button onClick={() => onDelete(task.id)} className="p-1 text-gray-500 hover:text-red-600 rounded"><Trash2 size={14} /></button>
                    </div>
                 </div>
               </div>
-            ))}
+            )})}
             {/* Spacer to match Gantt chart height if needed, though usually tasks map 1:1 */}
           </div>
         </div>
@@ -747,7 +869,7 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
                   key={item.key}
                   className={`flex-shrink-0 flex flex-col items-center justify-center border-r border-gray-200 text-[10px] text-gray-500 ${
                     item.isToday 
-                      ? 'bg-blue-50 text-blue-600 font-bold' 
+                      ? 'bg-primary-50 text-primary-600 font-bold' 
                       : item.isWeekend 
                         ? 'bg-gray-100/80 text-gray-600' 
                         : ''
@@ -776,7 +898,7 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
                       key={`grid-${item.key}`}
                       className={`flex-shrink-0 border-r border-gray-50 h-full ${
                         item.isToday 
-                          ? 'bg-blue-50/30' 
+                          ? 'bg-primary-50/30' 
                           : item.isWeekend 
                             ? 'bg-gray-50/80' 
                             : ''
@@ -801,7 +923,8 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
                    const startOffset = differenceInDays(currentStart, projectStart) * cellWidth;
                    const width = currentDuration * cellWidth;
                    const visualWidth = Math.max(width, cellWidth);
-                   const isTextOverflowing = visualWidth < (task.name.length * 14 + 24);
+                   // Use a larger multiplier (16px) to account for Chinese characters
+                   const isTextOverflowing = visualWidth < (task.name.length * 16 + 24);
 
                    return (
                     <div 
@@ -820,12 +943,12 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
                         className={`absolute top-2 h-8 ${
                           isParent 
                             ? 'flex items-start overflow-visible cursor-pointer'
-                            : `rounded-md shadow-sm border border-white/20 flex items-center px-2 overflow-visible hover:shadow-md transition-shadow ${isDragging ? 'z-30 ring-2 ring-indigo-300 cursor-grabbing' : 'cursor-pointer'}`
+                            : `rounded-md shadow-sm border flex items-center px-2 overflow-visible hover:shadow-md transition-shadow ${isDragging ? 'z-30 ring-2 ring-primary-300 cursor-grabbing' : 'cursor-pointer'} ${showCriticalPath && criticalPathIds.has(task.id) ? 'border-red-500 ring-2 ring-red-500 ring-offset-1' : 'border-white/20'}`
                         }`}
                         style={{
                           left: startOffset,
                           width: visualWidth,
-                          backgroundColor: isParent ? 'transparent' : (task.color || '#6366f1'),
+                          backgroundColor: isParent ? 'transparent' : (showCriticalPath && criticalPathIds.has(task.id) ? '#ef4444' : (task.color || '#6366f1')),
                         }}
                         onMouseDown={(e) => {
                           if (!isParent) handleTaskMouseDown(e, task, 'move');
@@ -869,7 +992,7 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
 
                             {/* Dependency Create Handle */}
                             <div
-                              className="absolute -right-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-indigo-500 border-2 border-white opacity-0 group-hover:opacity-100 cursor-crosshair z-20"
+                              className="absolute -right-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-primary-500 border-2 border-white opacity-0 group-hover:opacity-100 cursor-crosshair z-20"
                               onMouseDown={(e) => handleDependencyMouseDown(e, task)}
                             />
                           </>
@@ -919,15 +1042,17 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
                         path = `M ${x1} ${y1} L ${x1 + 10} ${y1} L ${x1 + 10} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;
                       }
 
+                      const isCriticalDep = showCriticalPath && criticalPathIds.has(task.id) && criticalPathIds.has(dep.predecessorId);
+
                       return (
                         <path
                           key={`${task.id}-${dep.predecessorId}`}
                           d={path}
                           fill="none"
-                          stroke="#6b7280"
-                          strokeWidth="2"
+                          stroke={isCriticalDep ? '#ef4444' : '#6b7280'}
+                          strokeWidth={isCriticalDep ? "3" : "2"}
                           strokeDasharray={dep.linkType === 'weak' ? '4 4' : 'none'}
-                          markerEnd="url(#arrowhead)"
+                          markerEnd={isCriticalDep ? "url(#arrowhead-critical)" : "url(#arrowhead)"}
                         />
                       );
                     })
@@ -950,6 +1075,9 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
                     </marker>
                     <marker id="arrowhead-drag" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
                       <polygon points="0 0, 6 2, 0 4" fill="#6366f1" />
+                    </marker>
+                    <marker id="arrowhead-critical" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
+                      <polygon points="0 0, 6 2, 0 4" fill="#ef4444" />
                     </marker>
                   </defs>
                 </svg>
