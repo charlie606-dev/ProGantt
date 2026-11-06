@@ -6,6 +6,7 @@ import {
   startOfWeek, startOfMonth, startOfYear, startOfQuarter,
   endOfWeek, endOfMonth, endOfYear, endOfQuarter
 } from 'date-fns';
+import { buildTimelineHeaders, buildTimelineRange, getCellWidth, labelFits } from '../utils/timelineHeaders';
 import { motion } from 'motion/react';
 import { Edit2, Trash2, Plus, GripVertical } from 'lucide-react';
 
@@ -40,6 +41,9 @@ interface IntegratedGanttProps {
   criticalPathIds?: Set<string>;
 }
 
+type ColumnKey = 'wbs' | 'name' | 'start' | 'end' | 'duration' | 'action';
+const COLUMN_MIN_WIDTHS: Record<ColumnKey, number> = { wbs: 48, name: 80, start: 64, end: 64, duration: 48, action: 100 };
+
 export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit, onDelete, onTaskUpdate, onQuickAdd, onReorder, columnWidths, onColumnWidthChange, viewMode = 'day', onViewModeChange, showCriticalPath = false, criticalPathIds = new Set() }) => {
   const [activeColorPicker, setActiveColorPicker] = useState<string | null>(null);
 
@@ -55,8 +59,7 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
       
       const projectStart = addDays(today, -bufferStart);
       const projectEnd = addDays(today, bufferEnd);
-      const days = eachDayOfInterval({ start: projectStart, end: projectEnd });
-      return { days, projectStart, projectEnd };
+      return buildTimelineRange(viewMode as TimelineViewMode, projectStart, projectEnd);
     }
 
     const startDates = tasks.map((t) => t.start);
@@ -70,117 +73,97 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
     if (viewMode === 'week') { bufferStart = 7; bufferEnd = 14; }
     if (viewMode === 'month') { bufferStart = 30; bufferEnd = 60; }
     if (viewMode === 'quarter') { bufferStart = 90; bufferEnd = 90; }
-    if (viewMode === 'year') { bufferStart = 365; bufferEnd = 365; }
+    if (viewMode === 'year') { bufferStart = 30; bufferEnd = 30; }
     
     const projectStart = addDays(minDate, -bufferStart);
     const projectEnd = addDays(maxDate, bufferEnd);
 
-    const days = eachDayOfInterval({ start: projectStart, end: projectEnd });
-    return { days, projectStart, projectEnd };
+    return buildTimelineRange(viewMode as TimelineViewMode, projectStart, projectEnd);
   }, [tasks, viewMode]);
 
-  const cellWidth = useMemo(() => {
-    switch (viewMode) {
-      case 'year': return 0.5;
-      case 'quarter': return 1;
-      case 'month': return 3;
-      case 'week': return 10;
-      case 'day':
-      default: return 40;
-    }
-  }, [viewMode]);
+  const cellWidth = useMemo(() => getCellWidth(viewMode as TimelineViewMode), [viewMode]);
 
-  const { topHeader, bottomHeader } = useMemo(() => {
-    if (days.length === 0) return { topHeader: [], bottomHeader: [] };
-
-    const getDays = (start: Date, end: Date) => {
-      const s = max([start, projectStart]);
-      const e = min([end, projectEnd]);
-      return Math.max(0, differenceInDays(addDays(e, 1), s));
-    };
-
-    switch (viewMode) {
-      case 'year': {
-        const years = eachYearOfInterval({ start: projectStart, end: projectEnd });
-        const bottom = years.map(y => ({
-          key: y.toISOString(),
-          label: format(y, 'yyyy'),
-          date: y,
-          daysCount: getDays(startOfYear(y), endOfYear(y))
-        }));
-        return { topHeader: [], bottomHeader: bottom };
-      }
-      case 'quarter': {
-        const years = eachYearOfInterval({ start: projectStart, end: projectEnd });
-        const top = years.map(y => ({
-          key: y.toISOString(),
-          label: format(y, 'yyyy'),
-          daysCount: getDays(startOfYear(y), endOfYear(y))
-        }));
-        const quarters = eachQuarterOfInterval({ start: projectStart, end: projectEnd });
-        const bottom = quarters.map(q => ({
-          key: q.toISOString(),
-          label: `Q${format(q, 'Q')}`,
-          date: q,
-          daysCount: getDays(startOfQuarter(q), endOfQuarter(q))
-        }));
-        return { topHeader: top, bottomHeader: bottom };
-      }
-      case 'month': {
-        const years = eachYearOfInterval({ start: projectStart, end: projectEnd });
-        const top = years.map(y => ({
-          key: y.toISOString(),
-          label: format(y, 'yyyy'),
-          daysCount: getDays(startOfYear(y), endOfYear(y))
-        }));
-        const months = eachMonthOfInterval({ start: projectStart, end: projectEnd });
-        const bottom = months.map(m => ({
-          key: m.toISOString(),
-          label: format(m, 'MMM'),
-          date: m,
-          daysCount: getDays(startOfMonth(m), endOfMonth(m))
-        }));
-        return { topHeader: top, bottomHeader: bottom };
-      }
-      case 'week': {
-        const months = eachMonthOfInterval({ start: projectStart, end: projectEnd });
-        const top = months.map(m => ({
-          key: m.toISOString(),
-          label: format(m, 'yyyy MMM'),
-          daysCount: getDays(startOfMonth(m), endOfMonth(m))
-        }));
-        const weeks = eachWeekOfInterval({ start: projectStart, end: projectEnd }, { weekStartsOn: 1 });
-        const bottom = weeks.map(w => ({
-          key: w.toISOString(),
-          label: `Week ${format(w, 'w')}`,
-          date: w,
-          daysCount: getDays(startOfWeek(w, { weekStartsOn: 1 }), endOfWeek(w, { weekStartsOn: 1 }))
-        }));
-        return { topHeader: top, bottomHeader: bottom };
-      }
-      case 'day':
-      default: {
-        const months = eachMonthOfInterval({ start: projectStart, end: projectEnd });
-        const top = months.map(m => ({
-          key: m.toISOString(),
-          label: format(m, 'yyyy年 MM月'),
-          daysCount: getDays(startOfMonth(m), endOfMonth(m))
-        }));
-        const bottom = days.map(d => ({
-          key: d.toISOString(),
-          label: format(d, 'd'),
-          subLabel: format(d, 'EEE'),
-          date: d,
-          daysCount: 1,
-          isWeekend: isWeekend(d),
-          isToday: isSameDay(d, new Date())
-        }));
-        return { topHeader: top, bottomHeader: bottom };
-      }
-    }
-  }, [viewMode, projectStart, projectEnd, days]);
+  const { topHeader, bottomHeader } = useMemo(
+    () => buildTimelineHeaders(viewMode as TimelineViewMode, projectStart, projectEnd, days),
+    [viewMode, projectStart, projectEnd, days]
+  );
 
   const totalLeftWidth = Object.values(columnWidths).reduce<number>((a, b) => a + (b as number), 0) + 30; // +30 for drag handle
+
+  // Splitter between task list (left) and timeline (right)
+  const LEFT_PANEL_MIN = 120;
+  const RIGHT_PANEL_MIN = 200;
+  const LEFT_PANEL_STORAGE_KEY = 'progantt-integrated-left-width';
+  const splitContainerRef = useRef<HTMLDivElement>(null);
+  const [leftPanelWidth, setLeftPanelWidth] = useState<number | null>(() => {
+    try {
+      const v = Number(localStorage.getItem(LEFT_PANEL_STORAGE_KEY));
+      return v > 0 ? v : null;
+    } catch { return null; }
+  });
+  const [isSplitDragging, setIsSplitDragging] = useState(false);
+  // null = show all columns; never wider than the columns themselves
+  const effectiveLeftWidth = leftPanelWidth === null ? totalLeftWidth : Math.min(leftPanelWidth, totalLeftWidth);
+
+  useEffect(() => {
+    try {
+      if (leftPanelWidth === null) localStorage.removeItem(LEFT_PANEL_STORAGE_KEY);
+      else localStorage.setItem(LEFT_PANEL_STORAGE_KEY, String(Math.round(leftPanelWidth)));
+    } catch { /* storage unavailable */ }
+  }, [leftPanelWidth]);
+
+  const handleSplitMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = effectiveLeftWidth;
+    const containerWidth = splitContainerRef.current?.clientWidth ?? Infinity;
+    setIsSplitDragging(true);
+    const onMove = (ev: MouseEvent) => {
+      const max = Math.min(totalLeftWidth, containerWidth - RIGHT_PANEL_MIN);
+      const next = Math.max(LEFT_PANEL_MIN, Math.min(max, startWidth + ev.clientX - startX));
+      setLeftPanelWidth(next >= totalLeftWidth ? null : next);
+    };
+    const onUp = () => {
+      setIsSplitDragging(false);
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
+  // Column widths actually rendered: shrink proportionally with the left panel,
+  // but never below a per-column minimum (then the panel scrolls horizontally).
+  const displayColumnWidths = useMemo(() => {
+    const keys = Object.keys(columnWidths) as (ColumnKey)[];
+    const available = effectiveLeftWidth - 30; // minus drag-handle column
+    const total = keys.reduce((a, k) => a + columnWidths[k], 0);
+    if (available >= total) return columnWidths;
+    const minOf = (k: ColumnKey) => Math.min(COLUMN_MIN_WIDTHS[k], columnWidths[k]);
+    const result = { ...columnWidths };
+    const fixed = new Set<ColumnKey>();
+    // water-fill: pin columns that hit their minimum, scale the rest
+    for (let i = 0; i < keys.length; i++) {
+      const fixedSum = keys.filter(k => fixed.has(k)).reduce((a, k) => a + minOf(k), 0);
+      const flexKeys = keys.filter(k => !fixed.has(k));
+      const flexTotal = flexKeys.reduce((a, k) => a + columnWidths[k], 0);
+      const scale = flexTotal > 0 ? Math.max(0, available - fixedSum) / flexTotal : 0;
+      let changed = false;
+      for (const k of flexKeys) {
+        const w = columnWidths[k] * scale;
+        if (w < minOf(k)) { fixed.add(k); changed = true; }
+        else result[k] = Math.floor(w);
+      }
+      for (const k of fixed) result[k] = minOf(k);
+      if (!changed) break;
+    }
+    return result;
+  }, [columnWidths, effectiveLeftWidth]);
+  const displayLeftWidth = Object.values(displayColumnWidths).reduce<number>((a, b) => a + (b as number), 0) + 30;
 
   // Refs for scroll syncing
   const leftBodyRef = useRef<HTMLDivElement>(null);
@@ -765,34 +748,35 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
 
   return (
     <div className="bg-white overflow-hidden flex flex-col h-full">
-      <div className="flex flex-1 overflow-hidden min-h-0">
-        {/* Left Panel: Task List */}
-        <div className="flex flex-col border-r border-gray-200 flex-shrink-0" style={{ width: 'max-content', minWidth: totalLeftWidth }}>
+      <div ref={splitContainerRef} className="flex flex-1 overflow-hidden min-h-0">
+        {/* Left Panel: Task List (width adjustable via splitter) */}
+        <div className="flex flex-col flex-shrink-0 overflow-x-auto overflow-y-hidden" style={{ width: effectiveLeftWidth }}>
+        <div className="flex flex-col flex-1 min-h-0" style={{ width: 'max-content', minWidth: displayLeftWidth }}>
           {/* Left Header */}
           <div className="flex bg-gray-50 border-b border-gray-200 h-16 flex-shrink-0">
             <div className="flex items-center justify-center border-r border-gray-200 bg-gray-50" style={{ width: 30, minWidth: 30, maxWidth: 30 }}>
             </div>
-            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200" style={{ width: columnWidths.wbs, minWidth: columnWidths.wbs, maxWidth: columnWidths.wbs }}>
+            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200 overflow-hidden whitespace-nowrap" style={{ width: displayColumnWidths.wbs, minWidth: displayColumnWidths.wbs, maxWidth: displayColumnWidths.wbs }}>
               WBS
               <Resizer column="wbs" />
             </div>
-            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200" style={{ width: columnWidths.name, minWidth: columnWidths.name, maxWidth: columnWidths.name }}>
+            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200 overflow-hidden whitespace-nowrap" style={{ width: displayColumnWidths.name, minWidth: displayColumnWidths.name, maxWidth: displayColumnWidths.name }}>
               任務名稱
               <Resizer column="name" />
             </div>
-            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200" style={{ width: columnWidths.start, minWidth: columnWidths.start, maxWidth: columnWidths.start }}>
+            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200 overflow-hidden whitespace-nowrap" style={{ width: displayColumnWidths.start, minWidth: displayColumnWidths.start, maxWidth: displayColumnWidths.start }}>
               開始日
               <Resizer column="start" />
             </div>
-            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200" style={{ width: columnWidths.end, minWidth: columnWidths.end, maxWidth: columnWidths.end }}>
+            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200 overflow-hidden whitespace-nowrap" style={{ width: displayColumnWidths.end, minWidth: displayColumnWidths.end, maxWidth: displayColumnWidths.end }}>
               完成日
               <Resizer column="end" />
             </div>
-            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200" style={{ width: columnWidths.duration, minWidth: columnWidths.duration, maxWidth: columnWidths.duration }}>
+            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200 overflow-hidden whitespace-nowrap" style={{ width: displayColumnWidths.duration, minWidth: displayColumnWidths.duration, maxWidth: displayColumnWidths.duration }}>
               天數
               <Resizer column="duration" />
             </div>
-            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200" style={{ width: columnWidths.action, minWidth: columnWidths.action, maxWidth: columnWidths.action }}>
+            <div className="relative flex items-center px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200 overflow-hidden whitespace-nowrap" style={{ width: displayColumnWidths.action, minWidth: displayColumnWidths.action, maxWidth: displayColumnWidths.action }}>
               操作
               <Resizer column="action" />
             </div>
@@ -821,14 +805,14 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
                 <div className="flex items-center justify-center border-r border-gray-100 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600" style={{ width: 30, minWidth: 30, maxWidth: 30 }}>
                   <GripVertical size={14} />
                 </div>
-                <div className="flex items-center px-4 text-sm font-mono text-gray-600 border-r border-gray-100 truncate" style={{ width: columnWidths.wbs, minWidth: columnWidths.wbs, maxWidth: columnWidths.wbs }}>{task.wbs}</div>
+                <div className="flex items-center px-4 text-sm font-mono text-gray-600 border-r border-gray-100 truncate" style={{ width: displayColumnWidths.wbs, minWidth: displayColumnWidths.wbs, maxWidth: displayColumnWidths.wbs }}>{task.wbs}</div>
                 
-                {renderCell(task, 'name', columnWidths.name, 'text')}
-                {renderCell(task, 'start', columnWidths.start, 'date')}
-                {renderCell(task, 'end', columnWidths.end, 'date')}
-                {renderCell(task, 'duration', columnWidths.duration, 'number')}
+                {renderCell(task, 'name', displayColumnWidths.name, 'text')}
+                {renderCell(task, 'start', displayColumnWidths.start, 'date')}
+                {renderCell(task, 'end', displayColumnWidths.end, 'date')}
+                {renderCell(task, 'duration', displayColumnWidths.duration, 'number')}
 
-                <div className="flex items-center justify-center px-4 border-r border-gray-100" style={{ width: columnWidths.action, minWidth: columnWidths.action, maxWidth: columnWidths.action }}>
+                <div className="flex items-center justify-center px-4 border-r border-gray-100" style={{ width: displayColumnWidths.action, minWidth: displayColumnWidths.action, maxWidth: displayColumnWidths.action }}>
                    <div className="flex gap-1">
                       <button onClick={() => onQuickAdd(task)} className="p-1 text-gray-500 hover:text-green-600 rounded" title="新增後續任務"><Plus size={14} /></button>
                       <button onClick={() => onEdit(task)} className="p-1 text-gray-500 hover:text-primary-600 rounded"><Edit2 size={14} /></button>
@@ -839,6 +823,20 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
             )})}
             {/* Spacer to match Gantt chart height if needed, though usually tasks map 1:1 */}
           </div>
+        </div>
+        </div>
+
+        {/* Splitter: drag to resize panels, double-click to show all columns */}
+        <div
+          onMouseDown={handleSplitMouseDown}
+          onDoubleClick={() => setLeftPanelWidth(null)}
+          className="group relative flex-shrink-0 w-1.5 cursor-col-resize bg-gray-200 hover:bg-primary-400 transition-colors z-20"
+          style={isSplitDragging ? { backgroundColor: 'var(--color-primary-500, #14b8a6)' } : undefined}
+          title="拖曳調整左右寬度（雙擊恢復顯示全部欄位）"
+          role="separator"
+          aria-orientation="vertical"
+        >
+          <div className="absolute inset-y-0 -left-1 -right-1" />
         </div>
 
         {/* Right Panel: Gantt Chart */}
@@ -857,7 +855,7 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
                     className="flex-shrink-0 flex items-center justify-center border-r border-gray-200 text-xs font-semibold text-gray-600 relative overflow-hidden"
                     style={{ width: m.daysCount * cellWidth }}
                   >
-                    <span className="sticky left-4 whitespace-nowrap">{m.label}</span>
+                    {labelFits(m.label, m.daysCount * cellWidth) && <span className="sticky left-4 whitespace-nowrap">{m.label}</span>}
                   </div>
                 ))}
               </div>
@@ -867,7 +865,7 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
               {bottomHeader.map((item) => (
                 <div
                   key={item.key}
-                  className={`flex-shrink-0 flex flex-col items-center justify-center border-r border-gray-200 text-[10px] text-gray-500 ${
+                  className={`flex-shrink-0 flex flex-col items-center justify-center overflow-hidden whitespace-nowrap border-r border-gray-200 text-[10px] text-gray-500 ${
                     item.isToday 
                       ? 'bg-primary-50 text-primary-600 font-bold' 
                       : item.isWeekend 
@@ -876,7 +874,7 @@ export const IntegratedGantt: React.FC<IntegratedGanttProps> = ({ tasks, onEdit,
                   }`}
                   style={{ width: item.daysCount * cellWidth }}
                 >
-                  <span className="text-xs leading-none">{item.label}</span>
+                  {labelFits(item.label, item.daysCount * cellWidth) && <span className="text-xs leading-none">{item.label}</span>}
                   {item.subLabel && <span className="uppercase text-[9px] leading-tight">{item.subLabel}</span>}
                 </div>
               ))}

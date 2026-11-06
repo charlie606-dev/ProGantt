@@ -6,6 +6,7 @@ import {
   startOfWeek, startOfMonth, startOfYear, startOfQuarter,
   endOfWeek, endOfMonth, endOfYear, endOfQuarter
 } from 'date-fns';
+import { buildTimelineHeaders, buildTimelineRange, getCellWidth, labelFits } from '../utils/timelineHeaders';
 import { motion } from 'motion/react';
 
 interface GanttChartProps {
@@ -43,8 +44,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({ tasks, onTaskClick, onTa
       
       const projectStart = addDays(today, -bufferStart);
       const projectEnd = addDays(today, bufferEnd);
-      const days = eachDayOfInterval({ start: projectStart, end: projectEnd });
-      return { days, projectStart, projectEnd };
+      return buildTimelineRange(viewMode as TimelineViewMode, projectStart, projectEnd);
     }
 
     const startDates = tasks.map((t) => t.start);
@@ -58,115 +58,20 @@ export const GanttChart: React.FC<GanttChartProps> = ({ tasks, onTaskClick, onTa
     if (viewMode === 'week') { bufferStart = 7; bufferEnd = 14; }
     if (viewMode === 'month') { bufferStart = 30; bufferEnd = 60; }
     if (viewMode === 'quarter') { bufferStart = 90; bufferEnd = 90; }
-    if (viewMode === 'year') { bufferStart = 365; bufferEnd = 365; }
+    if (viewMode === 'year') { bufferStart = 30; bufferEnd = 30; }
     
     const projectStart = addDays(minDate, -bufferStart);
     const projectEnd = addDays(maxDate, bufferEnd);
 
-    const days = eachDayOfInterval({ start: projectStart, end: projectEnd });
-    return { days, projectStart, projectEnd };
+    return buildTimelineRange(viewMode as TimelineViewMode, projectStart, projectEnd);
   }, [tasks, viewMode]);
 
-  const cellWidth = useMemo(() => {
-    switch (viewMode) {
-      case 'year': return 0.5;
-      case 'quarter': return 1;
-      case 'month': return 3;
-      case 'week': return 10;
-      case 'day':
-      default: return 40;
-    }
-  }, [viewMode]);
+  const cellWidth = useMemo(() => getCellWidth(viewMode as TimelineViewMode), [viewMode]);
 
-  const { topHeader, bottomHeader } = useMemo(() => {
-    if (days.length === 0) return { topHeader: [], bottomHeader: [] };
-
-    const getDays = (start: Date, end: Date) => {
-      const s = max([start, projectStart]);
-      const e = min([end, projectEnd]);
-      return Math.max(0, differenceInDays(addDays(e, 1), s));
-    };
-
-    switch (viewMode) {
-      case 'year': {
-        const years = eachYearOfInterval({ start: projectStart, end: projectEnd });
-        const bottom = years.map(y => ({
-          key: y.toISOString(),
-          label: format(y, 'yyyy'),
-          date: y,
-          daysCount: getDays(startOfYear(y), endOfYear(y))
-        }));
-        return { topHeader: [], bottomHeader: bottom };
-      }
-      case 'quarter': {
-        const years = eachYearOfInterval({ start: projectStart, end: projectEnd });
-        const top = years.map(y => ({
-          key: y.toISOString(),
-          label: format(y, 'yyyy'),
-          daysCount: getDays(startOfYear(y), endOfYear(y))
-        }));
-        const quarters = eachQuarterOfInterval({ start: projectStart, end: projectEnd });
-        const bottom = quarters.map(q => ({
-          key: q.toISOString(),
-          label: `Q${format(q, 'Q')}`,
-          date: q,
-          daysCount: getDays(startOfQuarter(q), endOfQuarter(q))
-        }));
-        return { topHeader: top, bottomHeader: bottom };
-      }
-      case 'month': {
-        const years = eachYearOfInterval({ start: projectStart, end: projectEnd });
-        const top = years.map(y => ({
-          key: y.toISOString(),
-          label: format(y, 'yyyy'),
-          daysCount: getDays(startOfYear(y), endOfYear(y))
-        }));
-        const months = eachMonthOfInterval({ start: projectStart, end: projectEnd });
-        const bottom = months.map(m => ({
-          key: m.toISOString(),
-          label: format(m, 'MMM'),
-          date: m,
-          daysCount: getDays(startOfMonth(m), endOfMonth(m))
-        }));
-        return { topHeader: top, bottomHeader: bottom };
-      }
-      case 'week': {
-        const months = eachMonthOfInterval({ start: projectStart, end: projectEnd });
-        const top = months.map(m => ({
-          key: m.toISOString(),
-          label: format(m, 'yyyy MMM'),
-          daysCount: getDays(startOfMonth(m), endOfMonth(m))
-        }));
-        const weeks = eachWeekOfInterval({ start: projectStart, end: projectEnd }, { weekStartsOn: 1 });
-        const bottom = weeks.map(w => ({
-          key: w.toISOString(),
-          label: `Week ${format(w, 'w')}`,
-          date: w,
-          daysCount: getDays(startOfWeek(w, { weekStartsOn: 1 }), endOfWeek(w, { weekStartsOn: 1 }))
-        }));
-        return { topHeader: top, bottomHeader: bottom };
-      }
-      case 'day':
-      default: {
-        const months = eachMonthOfInterval({ start: projectStart, end: projectEnd });
-        const top = months.map(m => ({
-          key: m.toISOString(),
-          label: format(m, 'yyyy年 MM月'),
-          daysCount: getDays(startOfMonth(m), endOfMonth(m))
-        }));
-        const bottom = days.map(d => ({
-          key: d.toISOString(),
-          label: format(d, 'd'),
-          subLabel: format(d, 'EEE'),
-          date: d,
-          daysCount: 1,
-          isWeekend: isWeekend(d),
-          isToday: isSameDay(d, new Date())
-        }));
-        return { topHeader: top, bottomHeader: bottom };
-      }
-    }
-  }, [viewMode, projectStart, projectEnd, days]);
+  const { topHeader, bottomHeader } = useMemo(
+    () => buildTimelineHeaders(viewMode as TimelineViewMode, projectStart, projectEnd, days),
+    [viewMode, projectStart, projectEnd, days]
+  );
 
   const rowHeight = 48; // Height of each task row
   const headerHeight = 64; // Height of the header (two rows of 32px)
@@ -370,7 +275,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({ tasks, onTaskClick, onTa
                   className="flex-shrink-0 flex items-center justify-center border-r border-gray-100 text-xs font-semibold text-gray-600 relative overflow-hidden"
                   style={{ width: m.daysCount * cellWidth }}
                 >
-                  <span className="sticky left-4 whitespace-nowrap">{m.label}</span>
+                  {labelFits(m.label, m.daysCount * cellWidth) && <span className="sticky left-4 whitespace-nowrap">{m.label}</span>}
                 </div>
               ))}
             </div>
@@ -380,7 +285,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({ tasks, onTaskClick, onTa
             {bottomHeader.map((item) => (
               <div
                 key={item.key}
-                className={`flex-shrink-0 flex flex-col items-center justify-center border-r border-gray-100 text-[10px] text-gray-500 ${
+                className={`flex-shrink-0 flex flex-col items-center justify-center overflow-hidden whitespace-nowrap border-r border-gray-100 text-[10px] text-gray-500 ${
                   item.isToday 
                     ? 'bg-primary-50 text-primary-600 font-bold' 
                     : item.isWeekend 
@@ -389,7 +294,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({ tasks, onTaskClick, onTa
                 }`}
                 style={{ width: item.daysCount * cellWidth }}
               >
-                <span className="text-xs leading-none">{item.label}</span>
+                {labelFits(item.label, item.daysCount * cellWidth) && <span className="text-xs leading-none">{item.label}</span>}
                 {item.subLabel && <span className="uppercase text-[9px] leading-tight">{item.subLabel}</span>}
               </div>
             ))}
